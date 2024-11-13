@@ -39,17 +39,15 @@ with st.expander("See all configurations", icon=':material/info:', expanded=Fals
         for j, config in enumerate(config_order):
             unique_values = sorted(df[config].unique(), key=lambda x: str(x))
             if i < len(unique_values):
-                values = [value[0].upper() + value[1:] if isinstance(value, str) else value for value in unique_values]  # 僅將首字母大寫
+                values = [value[0].upper() + value[1:] if isinstance(value, str) else value for value in unique_values]
                 value = str(values[i])
                 row_cols[j + 1].markdown(f"{value}")
             else:
                 row_cols[j + 1].markdown("")
 
-tab1, tab2 = st.tabs([':material/bar_chart: Scoreboard', ':material/table_chart: Table Overview'])
-
+tab1, tab2, tab3 = st.tabs([':material/bar_chart: Scoreboard', ':material/table_chart: Table Overview', ':material/star: Top 10 Score'])
 
 ################################################################################
-
 
 with tab1:
     col1, col2 = st.columns([0.175, 0.825], vertical_alignment="bottom")
@@ -271,9 +269,7 @@ with tab1:
             st.warning("Please select at least one configuration/score.")
     
 
-
 ################################################################################
-
 
 with tab2:
     col1, col2, col3, col4 = st.columns([0.175, 0.275, 0.275, 0.275])
@@ -408,7 +404,7 @@ with tab2:
 
     st.markdown('')
 
-    col1, col2, col3 = st.columns([0.175, 0.775, 0.05], vertical_alignment="bottom")
+    col1, col2, col3 = st.columns([0.2, 0.7, 0.1], vertical_alignment="bottom")
     with col1:
         st.subheader('Seperate Variables:')
     with col3:
@@ -623,14 +619,14 @@ with tab2:
                                             element_score = filtered_scores.min()
                                         st.markdown(f"<div style='text-align: center; line-height: 2;'>{element_score:.3f}</div>", unsafe_allow_html=True)
 
-                    change_vars = row_vars + col_vars
-                    filtered_vars = [item for item in config_order if item not in change_vars]
-                    st.markdown(
-                        """
-                        <hr style="border-top: 2px solid #bbb; margin-top: 5px;">
-                        """,
-                        unsafe_allow_html=True
-                    )
+                        change_vars = row_vars + col_vars
+                        filtered_vars = [item for item in config_order if item not in change_vars]
+                        st.markdown(
+                            """
+                            <hr style="border-top: 2px solid #bbb; margin-top: 5px;">
+                            """,
+                            unsafe_allow_html=True
+                        )
             st.markdown(
                 """
                 <hr style="border-top: 5px solid #bbb; margin-top: -25px;">
@@ -639,3 +635,96 @@ with tab2:
             )
             time.sleep(0.5)
             bar.empty()
+
+################################################################################
+
+with tab3:
+    st.subheader('Top 10 Scores')
+
+    # Create 12 columns for filters
+    st.markdown("#### Filters:")
+    filter_columns = st.columns(12)
+    filters = {}
+    for i, var in enumerate(config_order):
+        with filter_columns[i]:
+            unique_values = sorted(df[var].unique())
+            # Capitalize string values for display
+            display_values = [value.capitalize() if isinstance(value, str) else value for value in unique_values]
+            selected_values = st.multiselect(
+                label=var,
+                options=unique_values,
+                default=unique_values,
+                key=f'filter_{var}'
+            )
+            filters[var] = selected_values
+
+    st.markdown("---")
+
+    # Let the user select the score metric
+    score_var = st.selectbox(
+        'Select performance metric:',
+        options=score_order,
+        index=score_order.index('Out-AUC') if 'Out-AUC' in score_order else 0,
+        key='score_var_tab3'
+    )
+
+    col1, col2 = st.columns([0.95, 0.05], vertical_alignment='bottom')
+    with col1:
+        st.markdown(
+            """
+            <hr style="border-top: 5px solid #bbb; margin-mid: 0px;">
+            """,
+            unsafe_allow_html=True
+        )
+    with col2:
+        rerun_tab3 = False
+        if st.button('Run', type='secondary', key='Rerun_tab3'):
+            rerun_tab3 = True
+        else:
+            rerun_tab3 = False
+
+    if rerun_tab3 == True:
+        # Apply filters
+        filtered_df = df.copy()
+        for var in config_order:
+            selected_values = filters[var]
+            if selected_values:
+                filtered_df = filtered_df[filtered_df[var].isin(selected_values)]
+            else:
+                # If no values are selected, include all values for this variable
+                pass
+
+        if filtered_df.empty:
+            st.warning("No configurations match the selected filters.")
+        else:
+            # Decide whether to maximize or minimize based on the performance metric
+            if score_var in ['In-AUC', 'Out-AUC']:
+                ascending = False  # Maximize AUC
+            elif score_var in ['In-Brier', 'In-LL', 'Out-Brier', 'Out-LL']:
+                ascending = True  # Minimize Brier and LL
+            else:
+                ascending = False
+
+            # Group the data by configurations and compute mean score
+            grouped = filtered_df.groupby(config_order)[score_var].mean().reset_index()
+
+            if grouped.empty:
+                st.warning("No configurations match the selected filters.")
+            else:
+                # Sort configurations according to the mean score
+                score_stat_sorted = grouped.sort_values(by=score_var, ascending=ascending)
+
+                # Get top 10
+                top_10 = score_stat_sorted.head(10)
+
+                if len(top_10) < 10:
+                    st.warning(f"Only {len(top_10)} configurations match the selected filters.")
+
+                # Reset index and adjust for display
+                top_10.reset_index(drop=True, inplace=True)
+                top_10.index = top_10.index + 1  # Start index from 1
+                top_10[score_var] = top_10[score_var].round(4)
+
+                # Display the top 10 configurations
+                st.write('### Top 10 Configurations')
+                st.dataframe(top_10, use_container_width=True)
