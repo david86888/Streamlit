@@ -149,7 +149,7 @@ if n_iterations > 0:
         )
 
     if 'iter_index' not in st.session_state:
-        st.session_state.iter_index = 0
+        st.session_state.iter_index = 1
 
     col_info, col_prev, col_slider, col_next = st.columns([5, 1, 8, 1])
 
