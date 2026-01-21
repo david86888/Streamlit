@@ -60,7 +60,7 @@ def emd_decompose(y_input, x, h_start, h_min, a):
             
             u = (x[indices] - t) / h_curr
             weights = 0.75 * (1 - u**2)
-            weights = weights / (weights.sum())
+            # weights = weights / (weights.sum())
             
             def loss_function(m):
                 return np.sum(np.abs(local_res - m) * weights)
