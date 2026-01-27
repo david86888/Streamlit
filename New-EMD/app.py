@@ -2,6 +2,7 @@ import streamlit as st
 import numpy as np
 import pandas as pd
 from scipy.optimize import minimize_scalar
+from scipy.signal import fftconvolve
 import matplotlib.pyplot as plt
 import zipfile
 import io
@@ -9,8 +10,20 @@ import io
 st.set_page_config(layout="wide")
 
 st.sidebar.title("Parameters")
-h_start = st.sidebar.number_input("h_start", value=0.1, step=0.01, format="%.2f")
-h_min = st.sidebar.number_input("h_min", value=0.02, step=0.01, format="%.2f")
+
+h_start_input = st.sidebar.text_input("h_start", value="0.1")
+try:
+    h_start = float(h_start_input)
+except:
+    st.sidebar.error("Invalid input for h_start")
+    st.stop()
+
+h_min_input = st.sidebar.text_input("h_min", value="0.02")
+try:
+    h_min = float(h_min_input)
+except:
+    st.sidebar.error("Invalid input for h_min")
+    st.stop()
 
 a_input = st.sidebar.text_input("a (Python expression, e.g., np.sqrt(2))", value="np.sqrt(2)")
 try:
@@ -48,26 +61,20 @@ def emd_decompose(y_input, x, h_start, h_min, a):
     current_residuals = y_input.copy()
     h_curr = h_start
     
+    dx = x[1] - x[0]
+
     while h_curr >= h_min:
-        n = len(x)
-        y_smooth = np.zeros(n)
+        n_window = int(np.ceil(h_curr / dx))
+        k_x = np.arange(-n_window, n_window + 1) * dx
         
-        for i in range(n):
-            t = x[i]
-            
-            indices = np.where((x >= t - h_curr) & (x <= t + h_curr))[0]
-            local_res = current_residuals[indices]
-            
-            u = (x[indices] - t) / h_curr
-            weights = 0.75 * (1 - u**2)
-            # weights = weights / (weights.sum())
-            
-            def loss_function(m):
-                return np.sum(np.abs(local_res - m) * weights)
-            result = minimize_scalar(loss_function)
-            
-            if result.success:
-                y_smooth[i] = result.x
+        weights = 0.75 * (1 - (k_x / h_curr)**2)
+        weights[weights < 0] = 0
+        weights = weights / weights.sum()
+
+        numerator = fftconvolve(current_residuals, weights, mode='same')
+        denominator = fftconvolve(np.ones_like(current_residuals), weights, mode='same')
+        
+        y_smooth = numerator / (denominator + 1e-10)
             
         components.append(y_smooth)
         current_residuals = current_residuals - y_smooth
@@ -75,6 +82,12 @@ def emd_decompose(y_input, x, h_start, h_min, a):
         h_curr /= a
         
     return components, residuals_list
+
+with st.spinner('Decomposing signals...'):
+    components, residuals_list = emd_decompose(y_noisy, x, h_start, h_min, a_val)
+    components_clean, residuals_list_clean = emd_decompose(y_clean, x, h_start, h_min, a_val)
+
+n_iterations = len(components)
 
 with st.spinner('Decomposing signals...'):
     components, residuals_list = emd_decompose(y_noisy, x, h_start, h_min, a_val)
@@ -131,6 +144,43 @@ def generate_figure(i, mode):
 
 if n_iterations > 0:
     st.sidebar.markdown("---")
+    
+    if 'iter_index' not in st.session_state:
+        st.session_state.iter_index = 1
+
+    col_prev, col_slide, col_next = st.sidebar.columns([1, 4, 1])
+
+    with col_prev:
+        st.button(
+            "◀",
+            key="iter_prev",
+            on_click=lambda: st.session_state.__setitem__(
+                'iter_index',
+                max(1, int(st.session_state.get('iter_index', 1)) - 1)
+            )
+        )
+
+    with col_slide:
+        selected_iter = st.slider(
+            "Select Iteration to View",
+            1,
+            n_iterations,
+            key="iter_index",
+            label_visibility="collapsed",
+        )
+
+    with col_next:
+        st.button(
+            "▶",
+            key="iter_next",
+            on_click=lambda: st.session_state.__setitem__(
+                'iter_index',
+                min(n_iterations, int(st.session_state.get('iter_index', 1)) + 1)
+            )
+        )
+
+    st.sidebar.markdown("---")
+
     if st.sidebar.button("Save All Iterations to ZIP"):
         zip_buffer = io.BytesIO()
         with zipfile.ZipFile(zip_buffer, "w") as zf:
@@ -148,24 +198,34 @@ if n_iterations > 0:
             mime="application/zip"
         )
 
-    if 'iter_index' not in st.session_state:
-        st.session_state.iter_index = 1
+    current_h = h_start / (a_val ** (selected_iter - 1))
 
-    col_info, col_prev, col_slider, col_next = st.columns([5, 1, 8, 1])
+    if selected_iter % 100 in [11, 12, 13]:
+        iter_suffix = "th"
+    elif selected_iter % 10 == 1:
+        iter_suffix = "st"
+    elif selected_iter % 10 == 2:
+        iter_suffix = "nd"
+    elif selected_iter % 10 == 3:
+        iter_suffix = "rd"
+    else:
+        iter_suffix = "th"
+    iter_label = f"{selected_iter}{iter_suffix}"
 
-    with col_info:
-        st.markdown(f"# Total Iterations: {n_iterations}")
+    header = st.container()
+    with header:
+        tcol, m1, m2 = st.columns([6, 3, 3])
+        with tcol:
+            st.markdown(f"# Total Iterations: {n_iterations}")
+        with m1:
+            st.metric("Iteration", f"{iter_label}")
+        with m2:
+            st.metric("h (bandwidth)", f"{current_h:.4f}")
 
-    with col_prev:
-        if st.button("◀"):
-            st.session_state.iter_index = max(1, st.session_state.iter_index - 1)
-            
-    with col_next:
-        if st.button("▶"):
-            st.session_state.iter_index = min(n_iterations, st.session_state.iter_index + 1)
+        denom = max(n_iterations - 1, 1)
+        progress = (selected_iter - 1) / denom
+        st.progress(progress)
+        st.caption("Iteration progress")
 
-    with col_slider:
-        selected_iter = st.slider("Select Iteration to View", 1, n_iterations, key="iter_index")
-    
     fig = generate_figure(selected_iter - 1, view_mode)
     st.pyplot(fig)
