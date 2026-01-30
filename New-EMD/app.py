@@ -150,7 +150,7 @@ def generate_figure(i, mode, x_axis,
             res_clean[i] if res_clean is not None else np.nan * np.zeros_like(x_axis)
         ]
         
-        colors = ['gray', 'black', 'salmon', 'salmon', 'salmon', 'salmon']
+        colors = ['gray', 'black', 'royalblue', 'royalblue', 'salmon', 'salmon']
         alphas = [0.5, 1.0, 1.0, 1.0, 1.0, 1.0]
         widths = [1.5, 1.5, 1.5, 1.5, 1.5, 1.5]
 
@@ -163,7 +163,7 @@ def generate_figure(i, mode, x_axis,
         fig, axes = plt.subplots(3, 1, figsize=(10, 2+col_num*3), sharex=True)
         
         axes[0].plot(x_axis, curr_input_noisy, color='gray', linewidth=col_num*1.5, alpha=0.5)
-        axes[1].plot(x_axis, comps_noisy[i], color='salmon', linestyle='-', linewidth=col_num*1.5)
+        axes[1].plot(x_axis, comps_noisy[i], color='royalblue', linestyle='-', linewidth=col_num*1.5)
         axes[2].plot(x_axis, res_noisy[i], color='salmon', linestyle='-', linewidth=col_num*1.5)
 
         # for ax in axes:
@@ -173,7 +173,7 @@ def generate_figure(i, mode, x_axis,
         fig, axes = plt.subplots(3, 2, figsize=(10, 4.5), sharex=True)
 
         axes[0, 0].plot(x_axis, curr_input_noisy, color='gray', linewidth=1.5, alpha=0.5)
-        axes[1, 0].plot(x_axis, comps_noisy[i], color='salmon', linestyle='-', linewidth=1.5)
+        axes[1, 0].plot(x_axis, comps_noisy[i], color='royalblue', linestyle='-', linewidth=1.5)
         axes[2, 0].plot(x_axis, res_noisy[i], color='salmon', linestyle='-', linewidth=1.5)
 
         if input_clean is not None:
@@ -183,7 +183,7 @@ def generate_figure(i, mode, x_axis,
                 axes[0, 1].plot(x_axis, curr_input_clean, color='black', linestyle='-', linewidth=1.5)
             
             if comps_clean is not None:
-                axes[1, 1].plot(x_axis, comps_clean[i], color='salmon', linestyle='-', linewidth=1.5)
+                axes[1, 1].plot(x_axis, comps_clean[i], color='royalblue', linestyle='-', linewidth=1.5)
             if res_clean is not None:
                 axes[2, 1].plot(x_axis, res_clean[i], color='salmon', linestyle='-', linewidth=1.5)
 
