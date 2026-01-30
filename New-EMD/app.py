@@ -299,12 +299,15 @@ if data_mode == "Synthetic Data":
 
 elif data_mode == "Real-World Data":
     st.header("Real-World Data Analysis")
+
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    file_path = os.path.join(current_dir, 'Cap_10.csv')
     
     try:
-        if not os.path.exists("Cap_10.csv"):
+        if not os.path.exists(file_path):
             st.warning("File 'Cap_10.csv' not found.")
         
-        df = pd.read_csv("Cap_10.csv", index_col=0, parse_dates=True)
+        df = pd.read_csv(file_path, index_col=0, parse_dates=True)
         df = np.log10(df)
         col_list = df.columns.tolist()
 
