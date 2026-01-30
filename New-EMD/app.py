@@ -330,6 +330,7 @@ elif data_mode == "Real-World Data":
                 })
 
         max_iters = 0
+        n = len(df.index)
         if selected_cols_data:
             with st.spinner('Pre-calculating iterations...'):
                 for item in selected_cols_data:
@@ -343,12 +344,12 @@ elif data_mode == "Real-World Data":
         if max_iters > 0:
             header_real = st.container()
             with header_real:
-                c1, c2, c3, c4 = st.columns([8, 2, 4, 6], vertical_alignment="bottom")
+                c1, c2, c3, c4 = st.columns([8, 2, 6, 6], vertical_alignment="bottom")
                 sel_iter_real, curr_h_real = render_controls("real_shared", max_iters, h_start, a_val, c4)
                 
                 c1.markdown(f"# Max Iterations: {max_iters}")
                 c2.metric("Iteration", f"{sel_iter_real}")
-                c3.metric("h (bandwidth)", f"{curr_h_real:.4f}")
+                c3.metric("h (bandwidth)", f"{curr_h_real:.3f}  ({curr_h_real * n / 24:.0f} days)")
 
         st.markdown("---\n")
         real_cols_ui = st.columns(num_real_columns)
