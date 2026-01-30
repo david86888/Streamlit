@@ -302,11 +302,7 @@ elif data_mode == "Real-World Data":
     
     try:
         if not os.path.exists("Cap_10.csv"):
-            st.warning("File 'Cap_10.csv' not found. Creating dummy data for demonstration.")
-            dates = pd.date_range(start='2023-01-01', periods=1000, freq='H')
-            dummy_data = np.random.rand(1000, 10) * 100
-            df = pd.DataFrame(dummy_data, index=dates, columns=[f'Asset_{i}' for i in range(10)])
-            df.to_csv("Cap_10.csv")
+            st.warning("File 'Cap_10.csv' not found.")
         
         df = pd.read_csv("Cap_10.csv", index_col=0, parse_dates=True)
         df = np.log10(df)
