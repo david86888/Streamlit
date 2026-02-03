@@ -2,6 +2,7 @@ import streamlit as st
 import numpy as np
 import pandas as pd
 from scipy.signal import fftconvolve
+from scipy.optimize import minimize_scalar
 import matplotlib.pyplot as plt
 import zipfile
 import io
@@ -9,11 +10,24 @@ import os
 
 st.set_page_config(layout="wide")
 
+st.markdown(
+    """
+    <style>
+    [data-testid="stSidebar"] {
+        min-width: 300px;
+        max-width: 300px;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 st.sidebar.title("Parameters")
 
 data_mode = st.sidebar.segmented_control(
     "Data Source",
-    ["Synthetic Data", "Real-World Data"],
+    # ["Synthetic Data", "Real-World Data", "Signal Comparison"],
+    ["Synthetic Data", "Signal Comparison"],
     default="Synthetic Data"
 )
 
@@ -42,6 +56,7 @@ except:
 
 view_mode = "3 x 2"
 num_real_columns = 1
+custom_ylim_val = None
 
 if data_mode == "Synthetic Data":
     st.sidebar.markdown("---")
@@ -63,6 +78,15 @@ elif data_mode == "Real-World Data":
     )
 
     num_real_columns = int(st.session_state.real_cols_count)
+
+elif data_mode == "Signal Comparison":
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("# Comparison Options")
+    
+    view_mode = st.sidebar.selectbox("Display Mode", ["3 x 2", "6 x 1"])
+    
+    y_limit_input = st.sidebar.number_input("Y-Axis Limit (+/-)", value=4.0, step=0.1)
+    custom_ylim_val = float(y_limit_input)
 
 
 @st.cache_data
@@ -114,10 +138,52 @@ def emd_decompose(y_input, x, h_start, h_min, a):
         
     return components, residuals_list
 
+@st.cache_data
+def emd_decompose_local(y_input, x, h_start, h_min, a):
+    residuals_list = []
+    components = []
+    current_residuals = y_input.copy()
+    h_curr = h_start
+    
+    while h_curr >= h_min:
+        n = len(x)
+        y_smooth = np.zeros(n)
+        
+        for i in range(n):
+            t = x[i]
+            indices = np.where((x >= t - h_curr) & (x <= t + h_curr))[0]
+            local_res = current_residuals[indices]
+            
+            if len(indices) > 0:
+                u = (x[indices] - t) / h_curr
+                weights = 0.75 * (1 - u**2)
+                weights[weights < 0] = 0
+                w_sum = weights.sum()
+                if w_sum > 0:
+                    weights = weights / w_sum
+                    
+                    def loss_function(m):
+                        return np.sum(np.abs(local_res - m) * weights)
+                    
+                    result = minimize_scalar(loss_function)
+                    if result.success:
+                        y_smooth[i] = result.x
+                else:
+                    y_smooth[i] = current_residuals[i]
+            else:
+                 y_smooth[i] = current_residuals[i]
+
+        components.append(y_smooth)
+        current_residuals = current_residuals - y_smooth
+        residuals_list.append(current_residuals.copy())
+        h_curr /= a
+
+    return components, residuals_list
+
 def generate_figure(i, mode, x_axis, 
                     input_noisy, input_clean, 
                     comps_noisy, comps_clean, 
-                    res_noisy, res_clean, col_num=1):
+                    res_noisy, res_clean, col_num=1, custom_ylim=None):
     
     if i == 0:
         curr_input_noisy = input_noisy
@@ -126,17 +192,21 @@ def generate_figure(i, mode, x_axis,
         curr_input_noisy = res_noisy[i-1]
         curr_input_clean = res_clean[i-1] if res_clean is not None else None
 
-    valid_data = input_noisy[~np.isnan(input_noisy)]
-    if len(valid_data) > 0:
-        y_min = np.min(valid_data)
-        y_max = np.max(valid_data)
+    if custom_ylim is not None:
+        ylim_lower = -abs(custom_ylim)
+        ylim_upper = abs(custom_ylim)
     else:
-        y_min, y_max = 0, 1
-        
-    y_range = y_max - y_min
-    if y_range == 0: y_range = 1.0
-    ylim_lower = y_min - 0.1 * y_range
-    ylim_upper = y_max + 0.1 * y_range
+        valid_data = input_noisy[~np.isnan(input_noisy)]
+        if len(valid_data) > 0:
+            y_min = np.min(valid_data)
+            y_max = np.max(valid_data)
+        else:
+            y_min, y_max = 0, 1
+            
+        y_range = y_max - y_min
+        if y_range == 0: y_range = 1.0
+        ylim_lower = y_min - 0.1 * y_range
+        ylim_upper = y_max + 0.1 * y_range
 
     if mode == "6 x 1":
         fig, axes = plt.subplots(6, 1, figsize=(10, 9), sharex=True)
@@ -165,11 +235,12 @@ def generate_figure(i, mode, x_axis,
         axes[0].plot(x_axis, curr_input_noisy, color='gray', linewidth=col_num*1.5, alpha=0.5)
         axes[1].plot(x_axis, comps_noisy[i], color='royalblue', linestyle='-', linewidth=col_num*1.5)
         axes[2].plot(x_axis, res_noisy[i], color='salmon', linestyle='-', linewidth=col_num*1.5)
+        
+        for ax in axes:
+             if custom_ylim is not None:
+                ax.set_ylim(ylim_lower, ylim_upper)
 
-        # for ax in axes:
-        #     ax.set_ylim(ylim_lower, ylim_upper)
-
-    else: # 3 x 2
+    else: 
         fig, axes = plt.subplots(3, 2, figsize=(10, 4.5), sharex=True)
 
         axes[0, 0].plot(x_axis, curr_input_noisy, color='gray', linewidth=1.5, alpha=0.5)
@@ -384,3 +455,60 @@ elif data_mode == "Real-World Data":
 
     except Exception as e:
         st.error(f"Error loading or processing data: {e}")
+
+elif data_mode == "Signal Comparison":
+    st.header("Signal Comparison (Bird vs Mavic)")
+    
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    file_bird = os.path.join(current_dir, "bird_roi_abs.csv")
+    file_mavic = os.path.join(current_dir, "mavic_roi_abs.csv")
+    
+    try:
+        if not os.path.exists(file_bird) or not os.path.exists(file_mavic):
+            st.error("Error: Required CSV files (bird_roi_abs.csv, mavic_roi_abs.csv) not found.")
+        else:
+            df1 = pd.read_csv(file_bird, index_col=0)
+            df2 = pd.read_csv(file_mavic, index_col=0)
+            
+            df1 = (df1 - df1.mean()) / df1.std()
+            df2 = (df2 - df2.mean()) / df2.std()
+            
+            y_clean = df1.iloc[:, 0].to_numpy() 
+            y_noisy = df2.iloc[:, 0].to_numpy() 
+            
+            x_plot = df1.index.to_numpy()
+            x_calc = (x_plot - x_plot.min()) / (x_plot.max() - x_plot.min())
+            
+            with st.spinner('Decomposing signals using Local EMD (minimize_scalar)... This may take a while.'):
+                components_comp, residuals_list_comp = emd_decompose_local(y_noisy, x_calc, h_start, h_min, a_val)
+                components_clean_comp, residuals_list_clean_comp = emd_decompose_local(y_clean, x_calc, h_start, h_min, a_val)
+            
+            n_iterations_comp = len(components_comp)
+            
+            if n_iterations_comp > 0:
+                header_comp = st.container()
+                with header_comp:
+                    c1, c2, c3, c4 = st.columns([8, 2, 4, 6], vertical_alignment="center")
+                    sel_iter_comp, curr_h_comp = render_controls("comp", n_iterations_comp, h_start, a_val, c4)
+                    
+                    c1.markdown(f"# Total Iterations: {n_iterations_comp}")
+                    c2.metric("Iteration", f"{sel_iter_comp}")
+                    c3.metric("h (bandwidth)", f"{curr_h_comp:.4f}")
+                
+                st.markdown("\n")
+                
+                fig_comp = generate_figure(
+                    sel_iter_comp - 1, view_mode, x_plot,
+                    y_noisy, y_clean,
+                    components_comp, components_clean_comp,
+                    residuals_list_comp, residuals_list_clean_comp,
+                    col_num=1,
+                    custom_ylim=custom_ylim_val
+                )
+                st.pyplot(fig_comp)
+                
+                st.markdown("\n")
+                st.progress((sel_iter_comp - 1) / max(n_iterations_comp - 1, 1))
+
+    except Exception as e:
+        st.error(f"Error in Signal Comparison: {e}")
