@@ -41,7 +41,7 @@ except:
     st.sidebar.error("Invalid input for h_start")
     st.stop()
 
-h_min_input = st.sidebar.text_input("h_min", value="0.02")
+h_min_input = st.sidebar.text_input("h_min", value="0.01")
 try:
     h_min = float(h_min_input)
 except:
