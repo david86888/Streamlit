@@ -172,7 +172,7 @@ def emd_decompose_local(y_input, x, h_start, h_min, a):
                 else:
                     y_smooth[i] = current_residuals[i]
             else:
-                 y_smooth[i] = current_residuals[i]
+                y_smooth[i] = current_residuals[i]
 
         components.append(y_smooth)
         current_residuals = current_residuals - y_smooth
@@ -288,7 +288,7 @@ def show_mse_window(y_clean_syn, x_syn, h_start, h_min, a_val, outlier_prob, out
 
     df_sse = pd.DataFrame(
         sse_results, 
-        index=[f"{i}" for i in range(n_iterations)],
+        index=[f"{i+1}" for i in range(n_iterations)],
         columns=[f"{s:.2f}" for s in sigma_values]
     )
 
@@ -299,9 +299,8 @@ def show_mse_window(y_clean_syn, x_syn, h_start, h_min, a_val, outlier_prob, out
         
         def highlight_target(x):
             df_color = pd.DataFrame('', index=x.index, columns=x.columns)
-            # Find the column closest to target_sigma (index 5)
             target_col_name = df_sse.columns[5]
-            target_row_name = f"{current_iter - 1}"
+            target_row_name = f"{current_iter}"
             
             if target_col_name in df_color.columns and target_row_name in df_color.index:
                 df_color.at[target_row_name, target_col_name] = 'border: 2px solid red; color: red; font-weight: bold;'
@@ -327,6 +326,7 @@ def show_mse_window(y_clean_syn, x_syn, h_start, h_min, a_val, outlier_prob, out
         ax.set_title(f'MSE, a={a_val:.3f}')
         
         ax.set_yticks(np.arange(n_iterations))
+        ax.set_yticklabels(np.arange(1, n_iterations + 1))
         ax.set_xticks(np.arange(len(sigma_values)))
         ax.set_xticklabels([f"{s:.2f}" for s in sigma_values], rotation=45, ha='right')
         
