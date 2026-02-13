@@ -4,6 +4,7 @@ import pandas as pd
 from scipy.signal import fftconvolve
 from scipy.optimize import minimize_scalar
 import matplotlib.pyplot as plt
+import matplotlib.patches as patches
 import zipfile
 import io
 import os
@@ -14,8 +15,8 @@ st.markdown(
     """
     <style>
     [data-testid="stSidebar"] {
-        min-width: 300px;
-        max-width: 300px;
+        min-width: 350px;
+        max-width: 350px;
     }
     </style>
     """,
@@ -59,12 +60,12 @@ num_real_columns = 1
 custom_ylim_val = None
 
 if data_mode == "Synthetic Data":
-    st.sidebar.markdown("---")
+    # st.sidebar.markdown("---")
     st.sidebar.markdown("# Synthetic Data Options")
-    view_mode = st.sidebar.selectbox("Display Mode", ["3 x 2", "6 x 1"])
+    # view_mode = st.sidebar.selectbox("Display Mode", ["3 x 2", "6 x 1"])
 
 elif data_mode == "Real-World Data":
-    st.sidebar.markdown("---")
+    # st.sidebar.markdown("---")
     st.sidebar.markdown("# Real-World Data Options")
 
     if 'real_cols_count' not in st.session_state:
@@ -80,10 +81,10 @@ elif data_mode == "Real-World Data":
     num_real_columns = int(st.session_state.real_cols_count)
 
 elif data_mode == "Signal Comparison":
-    st.sidebar.markdown("---")
+    # st.sidebar.markdown("---")
     st.sidebar.markdown("# Comparison Options")
     
-    view_mode = st.sidebar.selectbox("Display Mode", ["3 x 2", "6 x 1"])
+    # view_mode = st.sidebar.selectbox("Display Mode", ["3 x 2", "6 x 1"])
     
     y_limit_input = st.sidebar.number_input("Y-Axis Limit (+/-)", value=4.0, step=0.1)
     custom_ylim_val = float(y_limit_input)
@@ -179,6 +180,157 @@ def emd_decompose_local(y_input, x, h_start, h_min, a):
         h_curr /= a
 
     return components, residuals_list
+
+import matplotlib.patches as patches
+
+import matplotlib.patches as patches
+
+@st.dialog("MSE Simulation Results", width="large")
+def show_mse_window(y_clean_syn, x_syn, h_start, h_min, a_val, outlier_prob, outlier_mul, target_sigma, current_iter):
+    st.write("Running MSE Simulation (B=100)...")
+    progress_bar = st.progress(0)
+    
+    B = 100
+    sigma_values = np.linspace(0, 2 * target_sigma, 11)
+    
+    n_points = len(x_syn)
+    
+    if len(x_syn) > 1:
+        dx = (x_syn[-1] - x_syn[0]) / (len(x_syn) - 1)
+    else:
+        dx = 1.0
+
+    components_clean_ref = []
+    current_residuals_clean_ref = y_clean_syn.copy()
+    h_curr = h_start
+
+    while h_curr >= h_min:
+        n_window = int(np.ceil(h_curr / dx))
+        if n_window < 1: n_window = 1
+        
+        k_x = np.arange(-n_window, n_window + 1) * dx
+        
+        if h_curr == 0:
+            weights = np.zeros_like(k_x)
+            weights[len(weights)//2] = 1
+        else:
+            weights = 0.75 * (1 - (k_x / h_curr)**2)
+            weights[weights < 0] = 0
+            
+        if weights.sum() > 0:
+            weights = weights / weights.sum()
+
+        denominator = fftconvolve(np.ones_like(current_residuals_clean_ref), weights, mode='same')
+        denominator_safe = denominator + 1e-10
+        numerator = fftconvolve(current_residuals_clean_ref, weights, mode='same')
+        y_smooth = numerator / denominator_safe
+        
+        components_clean_ref.append(y_smooth)
+        current_residuals_clean_ref = current_residuals_clean_ref - y_smooth
+        h_curr /= a_val
+
+    n_iterations = len(components_clean_ref)
+    sse_results = np.zeros((n_iterations, len(sigma_values)))
+    
+    for j, sigma_val in enumerate(sigma_values):
+        for b in range(B):
+            np.random.seed(b + j * B)
+            
+            is_outlier = np.random.rand(n_points) < outlier_prob
+            noise_b = np.zeros(n_points)
+            
+            if sigma_val > 0:
+                noise_b[~is_outlier] = np.random.normal(scale=sigma_val, size=np.sum(~is_outlier))
+                outliers_b = np.random.exponential(scale=sigma_val * outlier_mul, size=np.sum(is_outlier))
+                outliers_b *= np.random.choice([-1, 1], size=len(outliers_b))
+                noise_b[is_outlier] = outliers_b
+            
+            y_noisy_b = y_clean_syn + noise_b
+            
+            components_noisy_b = []
+            current_residuals_noisy_b = y_noisy_b.copy()
+            h_curr_b = h_start
+            
+            while h_curr_b >= h_min:
+                n_window = int(np.ceil(h_curr_b / dx))
+                if n_window < 1: n_window = 1
+                
+                k_x = np.arange(-n_window, n_window + 1) * dx
+                
+                if h_curr_b == 0:
+                    weights = np.zeros_like(k_x)
+                    weights[len(weights)//2] = 1
+                else:
+                    weights = 0.75 * (1 - (k_x / h_curr_b)**2)
+                    weights[weights < 0] = 0
+                    
+                if weights.sum() > 0:
+                    weights = weights / weights.sum()
+
+                denominator = fftconvolve(np.ones_like(current_residuals_noisy_b), weights, mode='same')
+                denominator_safe = denominator + 1e-10
+                numerator = fftconvolve(current_residuals_noisy_b, weights, mode='same')
+                y_smooth = numerator / denominator_safe
+                
+                components_noisy_b.append(y_smooth)
+                current_residuals_noisy_b = current_residuals_noisy_b - y_smooth
+                h_curr_b /= a_val
+            
+            n_comps = min(len(components_clean_ref), len(components_noisy_b))
+            
+            for k in range(n_comps):
+                diff = components_noisy_b[k] - components_clean_ref[k]
+                mse_k = np.mean(diff**2)
+                sse_results[k, j] += mse_k
+                
+        sse_results[:, j] /= B
+        progress_bar.progress((j + 1) / len(sigma_values))
+
+    df_sse = pd.DataFrame(
+        sse_results, 
+        index=[f"{i}" for i in range(n_iterations)],
+        columns=[f"{s:.2f}" for s in sigma_values]
+    )
+
+    col_table, col_plot = st.columns([1, 1])
+
+    with col_table:
+        st.markdown("### MSE Table")
+        
+        def highlight_target(x):
+            df_color = pd.DataFrame('', index=x.index, columns=x.columns)
+            # Find the column closest to target_sigma (index 5)
+            target_col_name = df_sse.columns[5]
+            target_row_name = f"{current_iter - 1}"
+            
+            if target_col_name in df_color.columns and target_row_name in df_color.index:
+                df_color.at[target_row_name, target_col_name] = 'border: 2px solid red; color: red; font-weight: bold;'
+            return df_color
+
+        st.dataframe(df_sse.style.apply(highlight_target, axis=None).format("{:.4f}"))
+
+    with col_plot:
+        st.markdown("### MSE Heatmap")
+        fig, ax = plt.subplots(figsize=(8, 6))
+        im = ax.imshow(sse_results, aspect='auto', cmap='viridis')
+        
+        target_col_idx = 5
+        target_row_idx = current_iter - 1
+        
+        if 0 <= target_row_idx < n_iterations:
+            rect = patches.Rectangle((target_col_idx - 0.5, target_row_idx - 0.5), 1, 1, linewidth=2, edgecolor='red', facecolor='none')
+            ax.add_patch(rect)
+
+        fig.colorbar(im)
+        ax.set_ylabel('Iteration Order')
+        ax.set_xlabel(r'Noise $\sigma$')
+        ax.set_title(f'MSE, a={a_val:.3f}')
+        
+        ax.set_yticks(np.arange(n_iterations))
+        ax.set_xticks(np.arange(len(sigma_values)))
+        ax.set_xticklabels([f"{s:.2f}" for s in sigma_values], rotation=45, ha='right')
+        
+        st.pyplot(fig)
 
 def generate_figure(i, mode, x_axis, 
                     input_noisy, input_clean, 
@@ -318,13 +470,27 @@ if data_mode == "Synthetic Data":
         st.sidebar.error("Invalid input for sigma")
         st.stop()
     
+    outlier_prob = st.sidebar.number_input("Outlier Probability", min_value=0.0, max_value=1.0, value=0.1, step=0.01)
+    outlier_mul = st.sidebar.number_input("Outlier Multiplier", value=5.0)
+    outlier_dist = st.sidebar.selectbox("Outlier Distribution", ["exponential"])
+    
     n_points = 2000
     eps = 1e-3
     x_syn = np.linspace(eps, 1.0, n_points)
     y_clean_syn = (1 + 0.5 * np.sin(4 * np.pi * x_syn)) * np.sin(2 * np.pi * (6 * x_syn + 12 * x_syn**3))
 
     np.random.seed(42)
-    noise = np.random.normal(scale=noise_std, size=n_points)
+    
+    is_outlier = np.random.rand(n_points) < outlier_prob
+    noise = np.zeros(n_points)
+    
+    noise[~is_outlier] = np.random.normal(scale=noise_std, size=np.sum(~is_outlier))
+    
+    if outlier_dist == "exponential":
+        outliers = np.random.exponential(scale=noise_std * outlier_mul, size=np.sum(is_outlier))
+        outliers *= np.random.choice([-1, 1], size=len(outliers))
+        noise[is_outlier] = outliers
+
     y_noisy_syn = y_clean_syn + noise
 
     with st.spinner('Decomposing synthetic signals...'):
@@ -356,17 +522,25 @@ if data_mode == "Synthetic Data":
         st.markdown("\n")
         st.progress((sel_iter_syn - 1) / max(n_iterations_syn - 1, 1))
 
-        if st.button("Save Synthetic Iterations to ZIP", key="save_syn"):
-            zip_buffer = io.BytesIO()
-            with zipfile.ZipFile(zip_buffer, "w") as zf:
-                for k in range(n_iterations_syn):
-                    f = generate_figure(k, view_mode, x_syn, y_noisy_syn, y_clean_syn, components_syn, components_clean_syn, residuals_list_syn, residuals_list_clean_syn)
-                    img_bytes = io.BytesIO()
-                    f.savefig(img_bytes, format='png', dpi=144, transparent=True)
-                    plt.close(f)
-                    zf.writestr(f"synthetic_iteration_{k:03d}.png", img_bytes.getvalue())
-            
-            st.download_button("Download ZIP", zip_buffer.getvalue(), "synthetic_iterations.zip", "application/zip")
+        col_zip, col_mse = st.columns([1, 1], vertical_alignment="center")
+        
+        with col_zip:
+            if st.button("Save Synthetic Iterations to ZIP", key="save_syn", use_container_width=True):
+                zip_buffer = io.BytesIO()
+                with zipfile.ZipFile(zip_buffer, "w") as zf:
+                    for k in range(n_iterations_syn):
+                        f = generate_figure(k, view_mode, x_syn, y_noisy_syn, y_clean_syn, components_syn, components_clean_syn, residuals_list_syn, residuals_list_clean_syn)
+                        img_bytes = io.BytesIO()
+                        f.savefig(img_bytes, format='png', dpi=144, transparent=True)
+                        plt.close(f)
+                        zf.writestr(f"synthetic_iteration_{k:03d}.png", img_bytes.getvalue())
+                
+                st.download_button("Download ZIP", zip_buffer.getvalue(), "synthetic_iterations.zip", "application/zip", key="dl_zip_btn")
+
+        with col_mse:
+            if st.button("Show MSE Analysis", key="show_mse", use_container_width=True):
+                # Added noise_std and sel_iter_syn to the call
+                show_mse_window(y_clean_syn, x_syn, h_start, h_min, a_val, outlier_prob, outlier_mul, noise_std, sel_iter_syn)
 
 elif data_mode == "Real-World Data":
     st.header("Real-World Data Analysis")
@@ -422,7 +596,7 @@ elif data_mode == "Real-World Data":
                 c2.metric("Iteration", f"{sel_iter_real}")
                 c3.metric("h (bandwidth)", f"{curr_h_real:.3f}  ({curr_h_real * n / 24:.0f} days)")
 
-        st.markdown("---\n")
+        # st.markdown("---\n")
         real_cols_ui = st.columns(num_real_columns)
         
         for i, col_ui in enumerate(real_cols_ui):
@@ -435,7 +609,7 @@ elif data_mode == "Real-World Data":
                     key=f"real_asset_select_{i}"
                 )
                 
-                st.markdown("---")
+                # st.markdown("---")
 
                 if selected_col and max_iters > 0:
                     data_item = next((item for item in selected_cols_data if item["name"] == selected_col), None)
