@@ -335,14 +335,17 @@ def show_mse_window(y_clean_syn, x_syn, h_start, h_min, a_val, outlier_prob, out
 def generate_figure(i, mode, x_axis, 
                     input_noisy, input_clean, 
                     comps_noisy, comps_clean, 
-                    res_noisy, res_clean, col_num=1, custom_ylim=None):
+                    res_noisy, res_clean, col_num=1, custom_ylim=None,
+                    input_3=None, comps_3=None, res_3=None):
     
     if i == 0:
         curr_input_noisy = input_noisy
-        curr_input_clean = input_clean if input_clean is not None else input_noisy 
+        curr_input_clean = input_clean if input_clean is not None else input_noisy
+        curr_input_3 = input_3
     else:
         curr_input_noisy = res_noisy[i-1]
         curr_input_clean = res_clean[i-1] if res_clean is not None else None
+        curr_input_3 = res_3[i-1] if res_3 is not None else None
 
     if custom_ylim is not None:
         ylim_lower = -abs(custom_ylim)
@@ -360,7 +363,35 @@ def generate_figure(i, mode, x_axis,
         ylim_lower = y_min - 0.1 * y_range
         ylim_upper = y_max + 0.1 * y_range
 
-    if mode == "6 x 1":
+    if input_3 is not None:
+        fig, axes = plt.subplots(3, 3, figsize=(15, 4.5), sharex=True)
+        
+        # Col 1
+        axes[0, 0].plot(x_axis, curr_input_noisy, color='gray', linewidth=1.5, alpha=0.5)
+        axes[1, 0].plot(x_axis, comps_noisy[i], color='royalblue', linestyle='-', linewidth=1.5)
+        axes[2, 0].plot(x_axis, res_noisy[i], color='salmon', linestyle='-', linewidth=1.5)
+
+        # Col 2
+        if curr_input_clean is not None:
+            axes[0, 1].plot(x_axis, curr_input_clean, color='gray', linestyle='-', linewidth=1.5, alpha=0.5)
+        if comps_clean is not None:
+            axes[1, 1].plot(x_axis, comps_clean[i], color='royalblue', linestyle='-', linewidth=1.5)
+        if res_clean is not None:
+            axes[2, 1].plot(x_axis, res_clean[i], color='salmon', linestyle='-', linewidth=1.5)
+
+        # Col 3
+        if curr_input_3 is not None:
+            axes[0, 2].plot(x_axis, curr_input_3, color='gray', linewidth=1.5, alpha=0.5)
+        if comps_3 is not None:
+            axes[1, 2].plot(x_axis, comps_3[i], color='royalblue', linestyle='-', linewidth=1.5)
+        if res_3 is not None:
+            axes[2, 2].plot(x_axis, res_3[i], color='salmon', linestyle='-', linewidth=1.5)
+
+        for ax_row in axes:
+            for ax in ax_row:
+                ax.set_ylim(ylim_lower, ylim_upper)
+
+    elif mode == "6 x 1":
         fig, axes = plt.subplots(6, 1, figsize=(10, 9), sharex=True)
         
         data_list = [
@@ -389,7 +420,7 @@ def generate_figure(i, mode, x_axis,
         axes[2].plot(x_axis, res_noisy[i], color='salmon', linestyle='-', linewidth=col_num*1.5)
         
         for ax in axes:
-             if custom_ylim is not None:
+            if custom_ylim is not None:
                 ax.set_ylim(ylim_lower, ylim_upper)
 
     else: 
@@ -631,33 +662,38 @@ elif data_mode == "Real-World Data":
         st.error(f"Error loading or processing data: {e}")
 
 elif data_mode == "Signal Comparison":
-    st.header("Signal Comparison (Bird vs Mavic)")
+    st.header("Signal Comparison (Bird vs Mavic vs P3P)")
     
     current_dir = os.path.dirname(os.path.abspath(__file__))
     file_bird = os.path.join(current_dir, "bird_roi_abs.csv")
     file_mavic = os.path.join(current_dir, "mavic_roi_abs.csv")
+    file_p3p = os.path.join(current_dir, "p3p_roi_abs.csv")
     
     try:
-        if not os.path.exists(file_bird) or not os.path.exists(file_mavic):
-            st.error("Error: Required CSV files (bird_roi_abs.csv, mavic_roi_abs.csv) not found.")
+        if not os.path.exists(file_bird) or not os.path.exists(file_mavic) or not os.path.exists(file_p3p):
+            st.error("Error: Required CSV files (bird, mavic, p3p) not found.")
         else:
             df1 = pd.read_csv(file_bird, index_col=0)
             df2 = pd.read_csv(file_mavic, index_col=0)
+            df3 = pd.read_csv(file_p3p, index_col=0)
             
             df1 = (df1 - df1.mean()) / df1.std()
             df2 = (df2 - df2.mean()) / df2.std()
+            df3 = (df3 - df3.mean()) / df3.std()
             
-            y_clean = df1.iloc[:, 0].to_numpy() 
-            y_noisy = df2.iloc[:, 0].to_numpy() 
+            y_bird = df1.iloc[:, 0].to_numpy() 
+            y_mavic = df2.iloc[:, 0].to_numpy()
+            y_p3p = df3.iloc[:, 0].to_numpy()
             
             x_plot = df1.index.to_numpy()
             x_calc = (x_plot - x_plot.min()) / (x_plot.max() - x_plot.min())
             
             with st.spinner('Decomposing signals using Local EMD (minimize_scalar)... This may take a while.'):
-                components_comp, residuals_list_comp = emd_decompose_local(y_noisy, x_calc, h_start, h_min, a_val)
-                components_clean_comp, residuals_list_clean_comp = emd_decompose_local(y_clean, x_calc, h_start, h_min, a_val)
+                components_bird, residuals_list_bird = emd_decompose_local(y_bird, x_calc, h_start, h_min, a_val)
+                components_mavic, residuals_list_mavic = emd_decompose_local(y_mavic, x_calc, h_start, h_min, a_val)
+                components_p3p, residuals_list_p3p = emd_decompose_local(y_p3p, x_calc, h_start, h_min, a_val) # New
             
-            n_iterations_comp = len(components_comp)
+            n_iterations_comp = len(components_bird)
             
             if n_iterations_comp > 0:
                 header_comp = st.container()
@@ -673,11 +709,12 @@ elif data_mode == "Signal Comparison":
                 
                 fig_comp = generate_figure(
                     sel_iter_comp - 1, view_mode, x_plot,
-                    y_noisy, y_clean,
-                    components_comp, components_clean_comp,
-                    residuals_list_comp, residuals_list_clean_comp,
+                    y_bird, y_mavic,
+                    components_bird, components_mavic,
+                    residuals_list_bird, residuals_list_mavic,
                     col_num=1,
-                    custom_ylim=custom_ylim_val
+                    custom_ylim=custom_ylim_val,
+                    input_3=y_p3p, comps_3=components_p3p, res_3=residuals_list_p3p
                 )
                 st.pyplot(fig_comp)
                 
